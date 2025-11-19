@@ -1,0 +1,34 @@
+{
+  "name": "langchain-issue-debugger",
+  "version": "1.0.0",
+  "description": "AI-powered issue debugging system using LangChain and LangGraph",
+  "main": "src/index.js",
+  "type": "module",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js"
+  },
+  "keywords": [
+    "langchain",
+    "langgraph",
+    "debugging",
+    "ai"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "express": "^4.18.2",
+    "dotenv": "^16.3.1",
+    "langchain": "^0.3.0",
+    "@langchain/core": "^0.3.0",
+    "@langchain/community": "^0.3.0",
+    "@langchain/langgraph": "^0.2.0",
+    "axios": "^1.6.0",
+    "winston": "^3.11.0",
+    "pg": "^8.11.3",
+    "ioredis": "^5.3.2"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.2"
+  }
+}
