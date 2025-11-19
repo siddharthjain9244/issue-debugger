@@ -3,6 +3,12 @@ import { logger } from '../utils/logger.js';
 import { createInitialState } from '../types/state.js';
 import { mandatoryDetailsNode } from '../nodes/mandatory_details_node.js';
 import { classifyIssueNode } from '../nodes/classify_issue_node.js';
+// import { queryPlannerNode } from '../nodes/query_planner_node.js'; // TODO: Will use later
+import { sqlQueryNode } from '../nodes/sql_query_node.js';
+import { sqlExecutorNode } from '../nodes/sql_executor_node.js';
+import { esQueryNode } from '../nodes/es_query_node.js';
+import { esExecutorNode } from '../nodes/es_executor_node.js';
+import { analysisNode } from '../nodes/analysis_node.js';
 
 /**
  * Workflow Service
@@ -31,13 +37,33 @@ export function createWorkflow() {
       category: null,
       classificationReasoning: null,
       dataSourcesToQuery: null,
+      queryPlanReasoning: null,
+      expectedFindings: null,
+      sqlQuery: null,
+      sqlExplanation: null,
+      sqlTablesUsed: null,
+      relevantTablesFound: null,
       sqlData: null,
-      lokiData: null,
+      needsESQuery: null,
+      esQuery: null,
+      esReasoning: null,
       esData: null,
+      lokiData: null,
       redisData: null,
       correlatedData: null,
+      // AI-generated insights
+      sqlInsights: null,
+      esInsights: null,
+      // Analysis results
       rootCause: null,
       evidence: null,
+      explanation: null,
+      confidence: null,
+      dataGaps: null,
+      nextSteps: null,
+      affectedEntities: null,
+      analysisCompletedAt: null,
+      // Legacy
       recommendedActions: null,
       automatableCommands: null,
       error: null
@@ -47,6 +73,12 @@ export function createWorkflow() {
   // Add nodes to the workflow
   workflow.addNode('mandatory_details', mandatoryDetailsNode);
   workflow.addNode('classify_issue', classifyIssueNode);
+  // workflow.addNode('query_planner', queryPlannerNode); // TODO: Uncomment later
+  workflow.addNode('sql_query', sqlQueryNode);
+  workflow.addNode('sql_executor', sqlExecutorNode);
+  workflow.addNode('es_query', esQueryNode);
+  workflow.addNode('es_executor', esExecutorNode);
+  workflow.addNode('analysis', analysisNode);
   
   // Define the workflow edges
   // Start -> mandatory_details
@@ -64,8 +96,45 @@ export function createWorkflow() {
     }
   );
   
-  // classify_issue -> END (for now, will add more nodes later)
-  workflow.addEdge('classify_issue', END);
+  // classify_issue -> sql_query (directly for now)
+  // TODO: Later add query_planner between classify_issue and sql_query
+  workflow.addEdge('classify_issue', 'sql_query');
+  
+  // COMMENTED OUT: query_planner flow (will use later)
+  // workflow.addEdge('classify_issue', 'query_planner');
+  // workflow.addConditionalEdges(
+  //   'query_planner',
+  //   (state) => {
+  //     if (state.dataSourcesToQuery && state.dataSourcesToQuery.includes('sql')) {
+  //       return 'sql_query';
+  //     }
+  //     return END;
+  //   }
+  // );
+  
+  // sql_query -> sql_executor (execute the SQL queries)
+  workflow.addEdge('sql_query', 'sql_executor');
+  
+  // sql_executor -> es_query (use SQL data to inform ES query)
+  workflow.addEdge('sql_executor', 'es_query');
+  
+  // es_query -> es_executor (if ES query needed) OR analysis (skip ES)
+  workflow.addConditionalEdges(
+    'es_query',
+    (state) => {
+      if (state.needsESQuery && state.esQuery) {
+        return 'es_executor';
+      }
+      // Skip ES and go directly to analysis
+      return 'analysis';
+    }
+  );
+  
+  // es_executor -> analysis (final analysis with all data)
+  workflow.addEdge('es_executor', 'analysis');
+  
+  // analysis -> END (final node)
+  workflow.addEdge('analysis', END);
   
   // Set the entry point
   workflow.setEntryPoint('mandatory_details');
@@ -90,6 +159,9 @@ export async function executeWorkflow(subject, body, metadata) {
   logger.info('🚀 Starting workflow execution');
   
   try {
+    // All services (MySQL, ES, Vector Store) are initialized on server startup
+    // Just create the initial state and execute the workflow
+    
     // Create initial state
     const initialState = createInitialState(subject, body, metadata);
     

@@ -36,14 +36,26 @@ export const createInitialState = (subject, body, metadata) => {
     missingFields: [],
     priority: '',
     category: '',
+    classificationReasoning: '',
     dataSourcesToQuery: [],
     sqlData: null,
     lokiData: null,
     esData: null,
     redisData: null,
     correlatedData: '',
+    // AI-generated insights from data
+    sqlInsights: '',
+    esInsights: '',
+    // Final analysis fields
     rootCause: '',
-    evidence: '',
+    evidence: [],
+    explanation: '',
+    confidence: '',
+    dataGaps: [],
+    nextSteps: [],
+    affectedEntities: {},
+    analysisCompletedAt: '',
+    // Legacy fields (keeping for compatibility)
     recommendedActions: [],
     automatableCommands: [],
     error: ''
