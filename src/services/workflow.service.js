@@ -9,6 +9,8 @@ import { sqlQueryNode } from '../nodes/sql_query_node.js';
 import { sqlExecutorNode } from '../nodes/sql_executor_node.js';
 import { esQueryNode } from '../nodes/es_query_node.js';
 import { esExecutorNode } from '../nodes/es_executor_node.js';
+import { kibanaQueryNode } from '../nodes/kibana_query_node.js';
+import { kibanaAnalysisNode } from '../nodes/kibana_analysis_node.js';
 import { analysisNode } from '../nodes/analysis_node.js';
 
 /**
@@ -55,6 +57,13 @@ export function createWorkflow() {
       // Knowledge base context
       knowledgeBaseContext: null,
       knowledgeBaseSources: null,
+      // Kibana logs
+      kibanaLogs: null,
+      kibanaLogCount: null,
+      kibanaQueryDetails: null,
+      kibanaSkipped: null,
+      kibanaError: null,
+      kibanaInsights: null,
       // AI-generated insights
       sqlInsights: null,
       esInsights: null,
@@ -87,6 +96,8 @@ export function createWorkflow() {
   workflow.addNode('sql_executor', sqlExecutorNode);
   workflow.addNode('es_query', esQueryNode);
   workflow.addNode('es_executor', esExecutorNode);
+  workflow.addNode('kibana_query', kibanaQueryNode);
+  workflow.addNode('kibana_analysis', kibanaAnalysisNode);
   workflow.addNode('analysis', analysisNode);
   
   // Define the workflow edges
@@ -131,20 +142,26 @@ export function createWorkflow() {
   // sql_executor -> es_query (use SQL data to inform ES query)
   workflow.addEdge('sql_executor', 'es_query');
   
-  // es_query -> es_executor (if ES query needed) OR analysis (skip ES)
+  // es_query -> es_executor (if ES query needed) OR kibana_query (skip ES)
   workflow.addConditionalEdges(
     'es_query',
     (state) => {
       if (state.needsESQuery && state.esQuery) {
         return 'es_executor';
       }
-      // Skip ES and go directly to analysis
-      return 'analysis';
+      // Skip ES and go directly to Kibana
+      return 'kibana_query';
     }
   );
   
-  // es_executor -> analysis (final analysis with all data)
-  workflow.addEdge('es_executor', 'analysis');
+  // es_executor -> kibana_query (fetch logs after ES data)
+  workflow.addEdge('es_executor', 'kibana_query');
+  
+  // kibana_query -> kibana_analysis (analyze fetched logs with AI)
+  workflow.addEdge('kibana_query', 'kibana_analysis');
+  
+  // kibana_analysis -> analysis (final analysis with all data + log insights)
+  workflow.addEdge('kibana_analysis', 'analysis');
   
   // analysis -> END (final node)
   workflow.addEdge('analysis', END);

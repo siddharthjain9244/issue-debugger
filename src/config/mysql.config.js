@@ -13,7 +13,7 @@ dotenv.config();
 const MYSQL_CONFIG = {
   production: {
     MASTER: {
-      host: 'prod-master-mysql.digitalgold.local',
+      host: 'prod-gold-redash.cc2bisep87zr.ap-south-1.rds.amazonaws.com',
       port: 3310,
       user: process.env.MYSQL_CLUSTER_MASTER_USER,
       password: process.env.MYSQL_CLUSTER_MASTER_PASSWORD,
@@ -35,7 +35,7 @@ const MYSQL_CONFIG = {
       }
     },
     SLAVE: {
-      host: 'prod-master-mysql.digitalgold.local',
+      host: 'prod-gold-redash.cc2bisep87zr.ap-south-1.rds.amazonaws.com',
       port: 3310,
       user: process.env.MYSQL_CLUSTER_SLAVE_USER,
       password: process.env.MYSQL_CLUSTER_SLAVE_PASSWORD,
@@ -57,7 +57,7 @@ const MYSQL_CONFIG = {
       }
     },
     SLAVE_2: {
-      host: 'prod-reader-mysql.digitalgold.local',
+      host: 'prod-gold-redash.cc2bisep87zr.ap-south-1.rds.amazonaws.com',
       port: 3310,
       user: process.env.MYSQL_CLUSTER_SLAVE_2_USER,
       password: process.env.MYSQL_CLUSTER_SLAVE_2_PASSWORD,
