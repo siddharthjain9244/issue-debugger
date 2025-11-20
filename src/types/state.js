@@ -12,6 +12,10 @@
  * @property {string} [metadata.priority] - Initial priority if provided
  * @property {boolean} hasRequiredFields - Whether all mandatory fields are present
  * @property {string[]} missingFields - List of missing required fields
+ * @property {string} issueType - Type of issue (real_issue|normal_mail)
+ * @property {string} issueTypeReasoning - Reasoning for issue type classification
+ * @property {string} [flowType] - Business flow type (buy|sell|kyc|customer_portfolio|sip_create|sip_debit|merchant_product_maintenance|other)
+ * @property {string} [flowTypeReasoning] - Reasoning for flow type classification
  * @property {string} priority - Classified priority (low|medium|high|critical)
  * @property {string} category - Issue category (database|api|frontend|backend|network|other)
  * @property {string[]} dataSourcesToQuery - List of data sources to query (sql|loki|es|redis)
@@ -34,6 +38,10 @@ export const createInitialState = (subject, body, metadata) => {
     metadata: metadata || {},
     hasRequiredFields: false,
     missingFields: [],
+    issueType: '',
+    issueTypeReasoning: '',
+    flowType: null,
+    flowTypeReasoning: '',
     priority: '',
     category: '',
     classificationReasoning: '',
