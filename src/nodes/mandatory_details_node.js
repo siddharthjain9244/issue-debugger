@@ -63,6 +63,45 @@ function extractCustomerId(text) {
 }
 
 /**
+ * Extract mobile/phone number from text using various patterns
+ * @param {string} text - Text to search
+ * @returns {string|null} Extracted phone number or null
+ */
+function extractPhoneNumber(text) {
+  if (!text) return null;
+  
+  // Patterns to match phone numbers in various formats
+  // Indian phone numbers: 10 digits, may have +91, spaces, dashes, etc.
+  const patterns = [
+    // With labels: mobile, phone, contact, etc.
+    /(?:mobile|phone|contact|mob|tel)[\s:]+(?:\+91[\s-]?)?(\d{10})/i,
+    /(?:mobile|phone|contact|mob|tel)[\s:]+(?:\+91[\s-]?)?(\d{3}[\s-]?\d{3}[\s-]?\d{4})/i,
+    // Direct 10-digit numbers (with country code)
+    /\+91[\s-]?(\d{10})/,
+    /\+91[\s-]?(\d{3}[\s-]?\d{3}[\s-]?\d{4})/,
+    // 10-digit numbers with separators
+    /(\d{3}[\s-]?\d{3}[\s-]?\d{4})/,
+    // Plain 10-digit numbers (be careful not to match orderId/customerId)
+    // Only match if it's clearly a phone number context
+    /(?:mobile|phone|contact|mob|tel|number)[\s:]+(\d{10})/i
+  ];
+  
+  for (const pattern of patterns) {
+    const match = pattern.exec(text);
+    if (match?.[1]) {
+      // Clean the extracted number (remove spaces and dashes)
+      const cleaned = match[1].replaceAll(' ', '').replaceAll('-', '');
+      // Validate it's 10 digits
+      if (/^\d{10}$/.test(cleaned)) {
+        return cleaned;
+      }
+    }
+  }
+  
+  return null;
+}
+
+/**
  * Mandatory Details Node
  * 
  * This node validates that all required fields are present in the issue request.
@@ -76,6 +115,7 @@ function extractCustomerId(text) {
  * Additional validation:
  * - If orderId is provided in body → details are fine
  * - If orderId is NOT provided → customerId is mandatory
+ * - If mobile/phone number is provided → details are fine
  * 
  * @param {Object} state - Current state of the workflow
  * @returns {Object} Updated state with validation results
@@ -103,32 +143,39 @@ export async function mandatoryDetailsNode(state) {
     missingFields.push('metadata.source (e.g., email, slack, chatbot, etc.)');
   }
   
-  // Analyze body for orderId and customerId
+  // Analyze body for orderId, customerId, and phone number
   const bodyText = state.body || '';
   const combinedText = `${state.subject || ''} ${bodyText}`;
   
   const orderId = extractOrderId(combinedText);
   const customerId = extractCustomerId(combinedText);
+  const phoneNumber = extractPhoneNumber(combinedText);
   
   logger.info('🔍 Analyzing body for identifiers:', {
     hasOrderId: !!orderId,
     orderId: orderId || 'not found',
     hasCustomerId: !!customerId,
-    customerId: customerId || 'not found'
+    customerId: customerId || 'not found',
+    hasPhoneNumber: !!phoneNumber,
+    phoneNumber: phoneNumber || 'not found'
   });
   
   // Validation logic:
   // 1. If orderId is provided → details are fine
   // 2. If orderId is NOT provided → customerId is mandatory
+  // 3. If mobile/phone number is provided → details are fine
   
-  if (!orderId && !customerId) {
-    missingFields.push('orderId or customerId (at least one identifier is required in the issue body)');
-  } else if (!orderId && customerId) {
-    // This is fine - customerId is present when orderId is not
-    logger.info('✅ CustomerId found, orderId not required');
+  if (!orderId && !customerId && !phoneNumber) {
+    missingFields.push('orderId, customerId, or mobile/phone number (at least one identifier is required in the issue body)');
   } else if (orderId) {
     // This is fine - orderId is present
     logger.info('✅ OrderId found, details are sufficient');
+  } else if (customerId) {
+    // This is fine - customerId is present when orderId is not
+    logger.info('✅ CustomerId found, orderId not required');
+  } else if (phoneNumber) {
+    // This is fine - phone number is present
+    logger.info('✅ Phone number found, details are sufficient');
   }
   
   const hasRequiredFields = missingFields.length === 0;
@@ -144,7 +191,8 @@ export async function mandatoryDetailsNode(state) {
     hasRequiredFields,
     missingFields,
     extractedOrderId: orderId,
-    extractedCustomerId: customerId
+    extractedCustomerId: customerId,
+    extractedPhoneNumber: phoneNumber
   };
 }
 
