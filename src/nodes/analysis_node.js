@@ -276,6 +276,9 @@ Reasoning: {classificationReasoning}
 ### ELASTICSEARCH DATA INSIGHTS (AI-Analyzed):
 {esInsights}
 
+### KIBANA LOG INSIGHTS (AI-Analyzed):
+{kibanaInsights}
+
 ### CRITICAL REMINDER - GOLD QUANTITY FIELDS:
 ⚠️  **NEVER use "gold_balance" field** - it's always NULL/unreliable
 ✅  **ALWAYS use these fields** for gold quantity calculations:
@@ -348,7 +351,9 @@ Respond in valid JSON format:
       classificationReasoning: state.classificationReasoning || 'Not classified',
       knowledgeBaseContext: state.knowledgeBaseContext || 'No relevant documentation found.',
       sqlInsights: sqlInsights,
-      esInsights: esInsights
+      esInsights: esInsights,
+      kibanaInsights: state.kibanaInsights || 'No log insights available.',
+      // kibanaLogs: state.kibanaLogs || 'No log data available.'
     });
 
     logger.info('✅ 3-stage analysis completed successfully');

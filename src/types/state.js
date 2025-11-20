@@ -54,6 +54,13 @@ export const createInitialState = (subject, body, metadata) => {
     // Knowledge base context
     knowledgeBaseContext: null,
     knowledgeBaseSources: [],
+    // Kibana logs
+    kibanaLogs: null,
+    kibanaLogCount: 0,
+    kibanaQueryDetails: [],
+    kibanaSkipped: false,
+    kibanaError: null,
+    kibanaInsights: '',
     // AI-generated insights from data
     sqlInsights: '',
     esInsights: '',

@@ -89,10 +89,23 @@ export async function debugIssue(req, res) {
           skipped: result.esData?.skipped || false,
           error: result.esData?.error || null
         } : null,
+        kibanaLogs: result.kibanaLogs ? {
+          logCount: result.kibanaLogCount || 0,
+          queryStrategies: result.kibanaQueryDetails || [],
+          skipped: result.kibanaSkipped || false,
+          error: result.kibanaError || null,
+          // Show preview of first 5 logs
+          logsPreview: result.kibanaLogs.slice(0, 5),
+          insights: result.kibanaInsights
+        } : {
+          skipped: true,
+          reason: result.kibanaError || 'Kibana not configured'
+        },
         analysis: {
           // AI-generated insights from each data source
           sqlInsights: result.sqlInsights || 'No SQL insights generated',
           esInsights: result.esInsights || 'No ES insights generated',
+          kibanaInsights: result.kibanaInsights || 'No log insights generated',
           // Final analysis
           rootCause: result.rootCause || 'Analysis not completed',
           evidence: result.evidence || [],
