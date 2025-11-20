@@ -21,9 +21,10 @@ import { logger } from '../utils/logger.js';
  * 
  * @param {Object} sqlData - SQL execution results
  * @param {string} userQuery - User's issue description
+ * @param {string} knowledgeBaseContext - Retrieved documentation context
  * @returns {Promise<string>} AI-generated SQL insights
  */
-async function analyzeSQLData(sqlData, userQuery) {
+async function analyzeSQLData(sqlData, userQuery, knowledgeBaseContext) {
   if (!sqlData || !sqlData.success || !sqlData.rows || sqlData.rows.length === 0) {
     return 'No SQL data available for analysis.';
   }
@@ -35,6 +36,9 @@ You are a database expert analyzing SQL query results for a user-reported issue 
 
 ### USER ISSUE:
 {userQuery}
+
+### KNOWLEDGE BASE CONTEXT (Business Flow Documentation):
+{knowledgeBaseContext}
 
 ### SQL DATA:
 - Total rows returned: {rowCount}
@@ -111,6 +115,7 @@ Provide a concise analysis (3-5 bullet points).`);
 
     const result = await chain.invoke({
       userQuery: userQuery,
+      knowledgeBaseContext: knowledgeBaseContext || 'No relevant documentation found.',
       rowCount: sqlData.rowCount || sqlData.totalRows || 0,
       orderIds: (sqlData.orderIds || []).slice(0, 20).join(', ') || 'None',
       customerIds: (sqlData.customerIds || []).slice(0, 20).join(', ') || 'None',
@@ -130,9 +135,10 @@ Provide a concise analysis (3-5 bullet points).`);
  * 
  * @param {Object} esData - ES execution results
  * @param {string} userQuery - User's issue description
+ * @param {string} knowledgeBaseContext - Retrieved documentation context
  * @returns {Promise<string>} AI-generated ES insights
  */
-async function analyzeESData(esData, userQuery) {
+async function analyzeESData(esData, userQuery, knowledgeBaseContext) {
   if (!esData || esData.skipped || !esData.documents || esData.documents.length === 0) {
     return 'No Elasticsearch data available for analysis.';
   }
@@ -144,6 +150,9 @@ You are an Elasticsearch expert analyzing transaction data for a user-reported i
 
 ### USER ISSUE:
 {userQuery}
+
+### KNOWLEDGE BASE CONTEXT (Business Flow Documentation):
+{knowledgeBaseContext}
 
 ### ELASTICSEARCH DATA:
 - Total documents: {total}
@@ -201,6 +210,7 @@ Provide a concise analysis (3-5 bullet points).`);
 
     const result = await chain.invoke({
       userQuery: userQuery,
+      knowledgeBaseContext: knowledgeBaseContext || 'No relevant documentation found.',
       total: esData.total || 0,
       documentsFound: esData.documentsFound || esData.documents.length,
       transactions: transactions
@@ -227,13 +237,15 @@ export async function analysisNode(state) {
     // Stage 1: Analyze SQL data with AI
     const sqlInsights = await analyzeSQLData(
       state.sqlData, 
-      `${state.subject}\n${state.body}`
+      `${state.subject}\n${state.body}`,
+      state.knowledgeBaseContext
     );
 
     // Stage 2: Analyze ES data with AI
     const esInsights = await analyzeESData(
       state.esData,
-      `${state.subject}\n${state.body}`
+      `${state.subject}\n${state.body}`,
+      state.knowledgeBaseContext
     );
     
     // Stage 3: Combine all insights for final analysis
@@ -252,6 +264,11 @@ Description: {body}
 Priority: {priority}
 Category: {category}
 Reasoning: {classificationReasoning}
+
+// ### KNOWLEDGE BASE CONTEXT (Business Flow Documentation):
+// {knowledgeBaseContext}
+
+// Use this documentation to understand the expected business flow and identify deviations.
 
 ### SQL DATA INSIGHTS (AI-Analyzed):
 {sqlInsights}
@@ -329,6 +346,7 @@ Respond in valid JSON format:
       priority: state.priority || 'unknown',
       category: state.category || 'unknown',
       classificationReasoning: state.classificationReasoning || 'Not classified',
+      knowledgeBaseContext: state.knowledgeBaseContext || 'No relevant documentation found.',
       sqlInsights: sqlInsights,
       esInsights: esInsights
     });

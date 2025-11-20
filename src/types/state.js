@@ -51,6 +51,9 @@ export const createInitialState = (subject, body, metadata) => {
     esData: null,
     redisData: null,
     correlatedData: '',
+    // Knowledge base context
+    knowledgeBaseContext: null,
+    knowledgeBaseSources: [],
     // AI-generated insights from data
     sqlInsights: '',
     esInsights: '',

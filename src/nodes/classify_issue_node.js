@@ -4,6 +4,41 @@ import { PromptTemplate } from '@langchain/core/prompts';
 import { StringOutputParser } from '@langchain/core/output_parsers';
 
 /**
+ * Robustly extract and parse JSON from LLM response
+ * Handles markdown code blocks, extra text, and malformed JSON
+ * 
+ * @param {string} text - Raw LLM response
+ * @param {Object} fallback - Fallback value if parsing fails
+ * @param {Array} validations - Array of {field, validValues} to validate
+ * @returns {Object} Parsed JSON or fallback
+ */
+function extractJSON(text, fallback = {}, validations = []) {
+  try {
+    // Remove markdown code blocks and extra text
+    let cleaned = text.trim()
+      .replace(/```json\n?/g, '')
+      .replace(/```\n?/g, '')
+      .replace(/^[^{]*({.*})[^}]*$/s, '$1'); // Extract only JSON object
+    
+    const parsed = JSON.parse(cleaned);
+    
+    // Validate fields if specified
+    for (const { field, validValues } of validations) {
+      if (!parsed[field] || !validValues.includes(parsed[field])) {
+        logger.warn(`Invalid value for ${field}: ${parsed[field]}, expected one of: ${validValues.join(', ')}`);
+        return fallback;
+      }
+    }
+    
+    return parsed;
+  } catch (error) {
+    logger.error('JSON extraction failed:', error.message);
+    logger.debug('Raw text:', text);
+    return fallback;
+  }
+}
+
+/**
  * Classify Issue Node
  * 
  * This node uses AI to classify the issue based on:
@@ -23,144 +58,73 @@ export async function classifyIssueNode(state) {
   try {
     // Step 1: Determine if this is a real issue or normal mail
     const issueTypePrompt = PromptTemplate.fromTemplate(`
-You are an expert email classifier for a technical support system. Analyze the following email and determine if it's a real technical issue or just a normal email.
+Classify this email.
 
-EMAIL SUBJECT: {subject}
+Subject: {subject}
+Body: {body}
 
-EMAIL DESCRIPTION: {body}
+Is this a TECHNICAL ISSUE or NORMAL MAIL?
+- real_issue = Errors, failures, stuck processes, bugs, user complaints about broken features
+- normal_mail = Greetings, marketing, newsletters, thank you messages, success confirmations
 
-Your task is to determine:
-ISSUE_TYPE: Is this a real technical issue that needs investigation?
-   - real_issue: Technical problems, errors, bugs, failures, system issues, user complaints about functionality, transaction issues, API errors, database errors, payment failures, verification problems, order processing issues
-   - normal_mail: Greetings, promotional emails, newsletters, general communications, non-technical messages, marketing content, announcements without technical issues
-
-Examples of normal_mail (NOT technical issues):
-- "Happy Birthday!", "Happy New Year", "Merry Christmas"
-- "Congratulations on your achievement", "Thank you for being a valued customer"
-- "New product launch announcement", "Special offer", "Discount available"
-- "Thank you for your feedback", "We appreciate your support"
-- "Welcome to our platform", "Account created successfully"
-- "Newsletter", "Monthly digest", "Product updates"
-- "Festival greetings", "Holiday wishes", "Seasonal greetings"
-- General marketing emails, promotional content, informational emails
-- Confirmation emails without errors (e.g., "Your order was successful")
-- General thank you messages, appreciation emails
-
-Examples of real_issue (technical problems that need investigation):
-- "Payment failed during buy transaction"
-- "Error 500 when accessing portfolio"
-- "KYC verification stuck", "KYC verification failed"
-- "Order not processing", "Order stuck in pending"
-- "SIP debit failed", "SIP payment not going through"
-- "Portfolio balance showing incorrect", "Portfolio not loading"
-- "API error", "Database connection failed"
-- "Transaction timeout", "Payment gateway error"
-- "Unable to create SIP", "SIP setup failed"
-- Any error messages, stack traces, exception logs
-- User complaints about functionality not working
-- System failures, crashes, bugs
-
-Key indicators of real_issue:
-- Contains error codes, error messages, exception details
-- Mentions technical failures (payment failed, API down, database error)
-- User reporting functionality not working as expected
-- Transaction/order/process stuck or failed
-- System performance issues, timeouts, crashes
-
-Key indicators of normal_mail:
-- Pure greetings or congratulations
-- Marketing/promotional content without technical problems
-- General announcements or newsletters
-- Thank you messages without error context
-- Informational emails about features (not reporting issues)
-
-Respond ONLY in this exact JSON format (no extra text):
-{{"issueType": "real_issue|normal_mail", "reasoning": "brief explanation"}}
-`);
+OUTPUT FORMAT (NO EXTRA TEXT, ONLY JSON):
+{{"issueType": "real_issue", "reasoning": "one sentence"}}`);
 
     // Step 2: If real issue, determine flow type
     const flowTypePrompt = PromptTemplate.fromTemplate(`
-You are an expert issue classifier for a Digital Gold platform. Analyze the following technical issue and determine which business flow it relates to.
+Identify business flow type.
 
-ISSUE SUBJECT: {subject}
+Subject: {subject}
+Body: {body}
 
-ISSUE DESCRIPTION: {body}
+PICK ONE:
+buy = Purchasing gold, buy orders, payment for purchase
+sell = Selling gold, withdrawals, redemption
+sip_create = Creating/setting up new SIP
+sip_debit = SIP payment deduction, recurring debit
+kyc = KYC/PAN/Aadhaar verification
+customer_portfolio = Portfolio balance, holdings
+merchant_product_maintenance = Merchant/product config
+other = None of above
 
-Your task is to determine:
-FLOW_TYPE: Which business flow does this issue relate to?
+SIP RULES:
+"create/setup SIP" → sip_create
+"SIP debit/payment" → sip_debit
+"SIP order" → buy
 
-IMPORTANT - SIP Classification Rules:
-- sip_create: Issues related to SIP creation, SIP setup, SIP registration, creating a new SIP plan, SIP configuration, recurring investment setup, SIP enrollment
-  Examples: "Unable to create SIP", "SIP setup failed", "Error while creating SIP", "SIP registration not working"
-  
-- sip_debit: Issues related to SIP debit execution, SIP payment processing, SIP auto-debit, recurring payment deduction, SIP installment processing, SIP debit failure
-  Examples: "SIP debit failed", "SIP payment not deducted", "SIP auto-debit error", "SIP installment stuck"
-  
-- buy: Issues related to SIP orders being processed (SIP orders are linked to buy orders), buying gold through SIP, SIP order execution, SIP order payment, SIP order processing
-  Examples: "SIP order failed", "SIP order payment issue", "SIP order not processing", "SIP buy transaction error"
-  Note: When SIP is mentioned but the issue is about the actual order/payment execution (not setup or debit), it's a buy flow issue
+OUTPUT FORMAT (NO EXTRA TEXT, ONLY JSON):
+{{"flowType": "buy", "reasoning": "one sentence"}}`);
 
-Other Flow Types:
-- buy: Issues related to buying gold, purchase transactions, order creation, payment for buying, one-time purchases
-  Examples: "Buy transaction failed", "Payment failed during purchase", "Order creation error", "Buy order stuck"
-  
-- sell: Issues related to selling gold, sell transactions, fund transfers, selling portfolio, withdrawal, redemption
-  Examples: "Sell transaction failed", "Fund transfer not received", "Sell order stuck", "Withdrawal error"
-  
-- kyc: Issues related to KYC verification, PAN verification, Aadhaar verification, document verification, bank account verification, KYC status, KYC approval
-  Examples: "KYC verification stuck", "PAN verification failed", "Aadhaar verification error", "KYC document rejected"
-  
-- customer_portfolio: Issues related to portfolio balance, portfolio display, portfolio fetching, portfolio updates, holdings display, gold balance
-  Examples: "Portfolio balance incorrect", "Portfolio not loading", "Holdings not showing", "Gold balance wrong"
-  
-- merchant_product_maintenance: Issues related to merchant management, product configuration, price updates, merchant settings, product maintenance, merchant API issues
-  Examples: "Merchant price not updating", "Product configuration error", "Merchant API down"
-  
-- other: Doesn't fit any of the above categories
-
-Classification Priority for SIP-related issues:
-1. If issue mentions "SIP creation", "SIP setup", "create SIP", "SIP registration" → sip_create
-2. If issue mentions "SIP debit", "SIP payment", "SIP deduction", "SIP installment" → sip_debit
-3. If issue mentions "SIP order", "SIP buy", "SIP transaction", "SIP purchase" → buy (SIP orders are buy orders)
-4. If SIP is mentioned but context is unclear, prioritize based on the action: setup/creation → sip_create, payment/deduction → sip_debit, order/transaction → buy
-
-Respond ONLY in this exact JSON format (no extra text):
-{{"flowType": "buy|sell|kyc|customer_portfolio|sip_create|sip_debit|merchant_product_maintenance|other", "reasoning": "brief explanation"}}
-`);
-
-    // Step 3: Determine priority and category (existing logic)
+    // Step 3: Determine priority and category
     const classificationPrompt = PromptTemplate.fromTemplate(`
-You are an expert issue classifier for a technical support system. Analyze the following issue and classify it.
+Classify priority and category.
 
-ISSUE SUBJECT: {subject}
+Subject: {subject}
+Body: {body}
 
-ISSUE DESCRIPTION: {body}
+PRIORITY (pick ONE):
+critical = System down, all users affected
+high = Major feature broken, many users affected
+medium = Partially working, some users affected
+low = Minor issue, cosmetic
 
-Your task is to determine:
-1. PRIORITY: How urgent is this issue?
-   - critical: System down, data loss, security breach, affects all users
-   - high: Major feature broken, affects many users, significant business impact
-   - medium: Feature partially working, affects some users, workaround available
-   - low: Minor issue, cosmetic problem, feature request
+CATEGORY (pick ONE):
+database = SQL errors, data issues
+api = API failures, endpoint errors
+backend = Server errors, processing issues
+frontend = UI bugs, browser issues
+network = Connectivity, timeouts
+other = Doesn't fit above
 
-2. CATEGORY: What type of issue is this?
-   - database: SQL errors, query performance, connection issues, data integrity
-   - api: API failures, endpoint errors, integration problems
-   - frontend: UI bugs, browser issues, rendering problems
-   - backend: Server errors, application logic, processing issues
-   - network: Connectivity, timeouts, DNS, firewall
-   - infrastructure: Server resources, deployment, configuration
-   - other: Doesn't fit above categories
+OUTPUT FORMAT (NO EXTRA TEXT, ONLY JSON):
+{{"priority": "high", "category": "backend", "reasoning": "one sentence"}}`);
 
-Respond ONLY in this exact JSON format (no extra text):
-{{"priority": "critical|high|medium|low", "category": "database|api|frontend|backend|network|infrastructure|other", "reasoning": "brief explanation"}}
-`);
-
-    // Initialize the LLM
+    // Initialize the LLM with temperature 0 for deterministic classification
     const llm = new ChatOpenAI({
-      modelName: process.env.OPENAI_MODEL || 'gpt-3.5-turbo',
-      temperature: 0.1, // Low temperature for consistent classification
+      modelName: process.env.OPENAI_MODEL || 'gpt-4o-mini',
+      temperature: 0, // Zero temperature = no randomness = no hallucination
       apiKey: process.env.OPENAI_API_KEY,
+      maxRetries: 2 // Retry on API failures
     });
 
     // Step 1: Check if it's a real issue
@@ -171,8 +135,12 @@ Respond ONLY in this exact JSON format (no extra text):
       body: state.body
     });
 
-    const cleanedIssueTypeResult = issueTypeResult.trim().replaceAll(/```json\n?/g, '').replaceAll(/```\n?/g, '');
-    const issueTypeClassification = JSON.parse(cleanedIssueTypeResult);
+    // Parse JSON with validation
+    const issueTypeClassification = extractJSON(
+      issueTypeResult,
+      { issueType: 'real_issue', reasoning: 'Classification parsing failed, treating as real issue for safety' },
+      [{ field: 'issueType', validValues: ['real_issue', 'normal_mail'] }]
+    );
 
     logger.info('✅ Issue type determined:', {
       issueType: issueTypeClassification.issueType,
@@ -201,8 +169,12 @@ Respond ONLY in this exact JSON format (no extra text):
       body: state.body
     });
 
-    const cleanedFlowTypeResult = flowTypeResult.trim().replaceAll(/```json\n?/g, '').replaceAll(/```\n?/g, '');
-    const flowTypeClassification = JSON.parse(cleanedFlowTypeResult);
+    // Parse JSON with validation
+    const flowTypeClassification = extractJSON(
+      flowTypeResult,
+      { flowType: 'other', reasoning: 'Classification parsing failed, marked as other' },
+      [{ field: 'flowType', validValues: ['buy', 'sell', 'kyc', 'customer_portfolio', 'sip_create', 'sip_debit', 'merchant_product_maintenance', 'other'] }]
+    );
 
     logger.info('✅ Flow type determined:', {
       flowType: flowTypeClassification.flowType,
@@ -217,8 +189,15 @@ Respond ONLY in this exact JSON format (no extra text):
       body: state.body
     });
 
-    const cleanedClassificationResult = classificationResult.trim().replaceAll(/```json\n?/g, '').replaceAll(/```\n?/g, '');
-    const classification = JSON.parse(cleanedClassificationResult);
+    // Parse JSON with validation
+    const classification = extractJSON(
+      classificationResult,
+      { priority: 'medium', category: 'other', reasoning: 'Classification parsing failed, using default values' },
+      [
+        { field: 'priority', validValues: ['critical', 'high', 'medium', 'low'] },
+        { field: 'category', validValues: ['database', 'api', 'backend', 'frontend', 'network', 'other'] }
+      ]
+    );
 
     logger.info('✅ Issue fully classified:', {
       issueType: issueTypeClassification.issueType,

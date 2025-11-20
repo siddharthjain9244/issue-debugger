@@ -5,6 +5,7 @@ import issueRouter from './routes/issue.routes.js';
 import { initESClient } from './services/elasticsearch.service.js';
 import { initMySQLPool } from './services/mysql.service.js';
 import { initializeSchemaVectorStore } from './services/schema-vector-store.service.js';
+import { initializeKnowledgeBaseVectorStore } from './services/knowledge-base-vector-store.service.js';
 
 // Load environment variables
 dotenv.config();
@@ -67,6 +68,15 @@ async function startServer() {
     } catch (error) {
       logger.error('❌ Vector store initialization failed:', error.message);
       throw error; // Critical - cannot proceed without schema embeddings
+    }
+    
+    // Initialize knowledge base vector store
+    try {
+      await initializeKnowledgeBaseVectorStore();
+      logger.info('✅ Knowledge base vector store initialized (flow documentation ready)');
+    } catch (error) {
+      logger.error('❌ Knowledge base initialization failed:', error.message);
+      throw error; // Critical - cannot proceed without knowledge base
     }
     
     // Check MySQL connectivity

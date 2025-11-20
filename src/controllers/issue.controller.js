@@ -43,6 +43,11 @@ export async function debugIssue(req, res) {
           category: result.category,
           reasoning: result.classificationReasoning
         },
+        knowledgeBase: {
+          retrieved: result.knowledgeBaseSources?.length > 0 || false,
+          sources: result.knowledgeBaseSources || [],
+          contextAvailable: !!result.knowledgeBaseContext
+        },
         // queryPlan: {
         //   dataSources: result.dataSourcesToQuery || [],
         //   reasoning: result.queryPlanReasoning,
@@ -96,6 +101,13 @@ export async function debugIssue(req, res) {
           dataGaps: result.dataGaps || [],
           nextSteps: result.nextSteps || [],
           affectedEntities: result.affectedEntities || {},
+          // Token usage tracking
+          tokenUsage: result.tokenUsage || {
+            sqlAnalysis: 0,
+            esAnalysis: 0,
+            finalAnalysis: 0,
+            total: 0
+          },
           completedAt: result.analysisCompletedAt || new Date().toISOString()
         },
         processedAt: new Date().toISOString()

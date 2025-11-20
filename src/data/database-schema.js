@@ -23,13 +23,14 @@ export const DATABASE_SCHEMA = {
       pincode: 'varchar(20) INDEXED',
       gold_balance: 'decimal(15,4) - Current gold balance in grams',
       status: 'tinyint - Portfolio status',
+      quantity: 'decimal(15,4) - Current gold quantity in grams',
       created_at: 'timestamp INDEXED',
       updated_at: 'timestamp'
     },
     relationships: [
       'customer_id links to customer',
       'merchant_id links to dg_merchants',
-      'gold_balance affected by buy_orders, sell_orders, transfers'
+      'quantity affected by buy_orders, sell_orders, transfers'
     ],
     commonQueries: [
       'Get customer total gold balance',
@@ -137,7 +138,7 @@ export const DATABASE_SCHEMA = {
     relationships: [
       'customer_id links to customer',
       'merchant_id links to dg_merchants',
-      'Updates customer_portfolio gold_balance on completion'
+      'Updates customer_portfolio quantity on completion'
     ],
     commonQueries: [
       'Get customer order history',

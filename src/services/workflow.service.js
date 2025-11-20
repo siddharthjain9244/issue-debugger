@@ -3,6 +3,7 @@ import { logger } from '../utils/logger.js';
 import { createInitialState } from '../types/state.js';
 import { mandatoryDetailsNode } from '../nodes/mandatory_details_node.js';
 import { classifyIssueNode } from '../nodes/classify_issue_node.js';
+import { knowledgeRetrievalNode } from '../nodes/knowledge_retrieval_node.js';
 // import { queryPlannerNode } from '../nodes/query_planner_node.js'; // TODO: Will use later
 import { sqlQueryNode } from '../nodes/sql_query_node.js';
 import { sqlExecutorNode } from '../nodes/sql_executor_node.js';
@@ -51,6 +52,9 @@ export function createWorkflow() {
       lokiData: null,
       redisData: null,
       correlatedData: null,
+      // Knowledge base context
+      knowledgeBaseContext: null,
+      knowledgeBaseSources: null,
       // AI-generated insights
       sqlInsights: null,
       esInsights: null,
@@ -66,13 +70,18 @@ export function createWorkflow() {
       // Legacy
       recommendedActions: null,
       automatableCommands: null,
-      error: null
+      error: null,
+      flowTypeReasoning: null,
+      issueTypeReasoning: null,
+      flowType: null,
+      issueType: null,
     }
   });
 
   // Add nodes to the workflow
   workflow.addNode('mandatory_details', mandatoryDetailsNode);
   workflow.addNode('classify_issue', classifyIssueNode);
+  workflow.addNode('knowledge_retrieval', knowledgeRetrievalNode);
   // workflow.addNode('query_planner', queryPlannerNode); // TODO: Uncomment later
   workflow.addNode('sql_query', sqlQueryNode);
   workflow.addNode('sql_executor', sqlExecutorNode);
@@ -96,9 +105,13 @@ export function createWorkflow() {
     }
   );
   
-  // classify_issue -> sql_query (directly for now)
-  // TODO: Later add query_planner between classify_issue and sql_query
-  workflow.addEdge('classify_issue', 'sql_query');
+  // classify_issue -> knowledge_retrieval (retrieve relevant documentation)
+  workflow.addEdge('classify_issue', 'knowledge_retrieval');
+  
+  // knowledge_retrieval -> sql_query (proceed with data collection)
+  workflow.addEdge('knowledge_retrieval', 'sql_query');
+  
+  // TODO: Later add query_planner between knowledge_retrieval and sql_query
   
   // COMMENTED OUT: query_planner flow (will use later)
   // workflow.addEdge('classify_issue', 'query_planner');
