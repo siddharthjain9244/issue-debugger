@@ -38,6 +38,13 @@ export const createInitialState = (subject, body, metadata) => {
     metadata: metadata || {},
     hasRequiredFields: false,
     missingFields: [],
+    // AI-extracted identifiers (from mandatory_details_node_ai)
+    aiExtractedIdentifiers: {},
+    hasAnyIdentifier: false,
+    foundIdentifiersCount: 0,
+    foundIdentifiers: [],
+    aiExtractionError: null,
+    // Classification
     issueType: '',
     issueTypeReasoning: '',
     flowType: null,

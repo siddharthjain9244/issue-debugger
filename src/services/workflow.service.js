@@ -1,7 +1,8 @@
 import { StateGraph, END } from '@langchain/langgraph';
 import { logger } from '../utils/logger.js';
 import { createInitialState } from '../types/state.js';
-import { mandatoryDetailsNode } from '../nodes/mandatory_details_node.js';
+// import { mandatoryDetailsNode } from '../nodes/mandatory_details_node.js'; // TODO: Commented out for now, using AI version only
+import { mandatoryDetailsNodeUsingAi } from '../nodes/mandatory_details_node_ai.js';
 import { classifyIssueNode } from '../nodes/classify_issue_node.js';
 import { knowledgeRetrievalNode } from '../nodes/knowledge_retrieval_node.js';
 // import { queryPlannerNode } from '../nodes/query_planner_node.js'; // TODO: Will use later
@@ -36,6 +37,13 @@ export function createWorkflow() {
       metadata: null,
       hasRequiredFields: null,
       missingFields: null,
+      // AI-extracted identifiers
+      aiExtractedIdentifiers: null,
+      hasAnyIdentifier: null,
+      foundIdentifiersCount: null,
+      foundIdentifiers: null,
+      aiExtractionError: null,
+      // Classification
       priority: null,
       category: null,
       classificationReasoning: null,
@@ -88,7 +96,8 @@ export function createWorkflow() {
   });
 
   // Add nodes to the workflow
-  workflow.addNode('mandatory_details', mandatoryDetailsNode);
+  // workflow.addNode('mandatory_details', mandatoryDetailsNode); // TODO: Commented out, using AI version only
+  workflow.addNode('mandatory_details_ai', mandatoryDetailsNodeUsingAi);
   workflow.addNode('classify_issue', classifyIssueNode);
   workflow.addNode('knowledge_retrieval', knowledgeRetrievalNode);
   // workflow.addNode('query_planner', queryPlannerNode); // TODO: Uncomment later
@@ -101,15 +110,27 @@ export function createWorkflow() {
   workflow.addNode('analysis', analysisNode);
   
   // Define the workflow edges
-  // Start -> mandatory_details
-  workflow.addEdge('__start__', 'mandatory_details');
+  // Start -> mandatory_details_ai (AI-powered validation only)
+  workflow.addEdge('__start__', 'mandatory_details_ai');
   
-  // mandatory_details -> classify_issue (if fields are valid)
-  // mandatory_details -> END (if fields are missing)
+  // COMMENTED OUT: Basic validation (now using AI validation only)
+  // workflow.addEdge('__start__', 'mandatory_details');
+  // workflow.addConditionalEdges(
+  //   'mandatory_details',
+  //   (state) => {
+  //     if (state.hasRequiredFields) {
+  //       return 'mandatory_details_ai';
+  //     }
+  //     return END;
+  //   }
+  // );
+  
+  // mandatory_details_ai -> classify_issue (if at least one identifier found)
+  // mandatory_details_ai -> END (if no identifiers found)
   workflow.addConditionalEdges(
-    'mandatory_details',
+    'mandatory_details_ai',
     (state) => {
-      if (state.hasRequiredFields) {
+      if (state.hasAnyIdentifier) {
         return 'classify_issue';
       }
       return END;
@@ -166,13 +187,13 @@ export function createWorkflow() {
   // analysis -> END (final node)
   workflow.addEdge('analysis', END);
   
-  // Set the entry point
-  workflow.setEntryPoint('mandatory_details');
+  // Set the entry point (using AI validation only)
+  workflow.setEntryPoint('mandatory_details_ai');
   
   // Compile the workflow
   const app = workflow.compile();
   
-  logger.info('✅ Workflow created successfully');
+  logger.info('✅ Workflow created successfully (using AI-powered validation)');
   
   return app;
 }

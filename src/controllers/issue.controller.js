@@ -9,7 +9,7 @@ import { executeWorkflow } from '../services/workflow.service.js';
  */
 export async function debugIssue(req, res) {
   try {
-    const { subject, body, metadata } = req.body;
+    const { subject, body, metadata,messageId,threadId } = req.body;
 
     logger.info('📥 Received debug issue request', {
       subject,
@@ -20,13 +20,17 @@ export async function debugIssue(req, res) {
     // Execute the LangGraph workflow
     const result = await executeWorkflow(subject, body, metadata);
 
-    // Check if validation failed
-    if (!result.hasRequiredFields) {
+    // Check if AI identifier extraction failed (no identifiers found)
+    if (!result.hasAnyIdentifier) {
       return res.status(400).json({
         status: 'error',
-        message: 'Missing required fields',
-        missingFields: result.missingFields,
-        data: result
+        message: 'No identifiers found in the query',
+        detail: 'At least one identifier required: order_id, customer_id, phone_number, imps_track_id, digio_txn_id, account_number, mmtc_order_id, predebit_reference_id, or subscription_id',
+        extractedIdentifiers: result.aiExtractedIdentifiers,
+        aiExtractionError: result.aiExtractionError,
+        data: result,
+        messageId,
+        threadId
       });
     }
 
@@ -38,7 +42,18 @@ export async function debugIssue(req, res) {
         subject: result.subject,
         body: result.body,
         metadata: result.metadata,
+        messageId,
+        threadId,
+        extractedIdentifiers: {
+          identifiers: result.aiExtractedIdentifiers || {},
+          foundCount: result.foundIdentifiersCount || 0,
+          found: result.foundIdentifiers || []
+        },
         classification: {
+          issueType: result.issueType,
+          issueTypeReasoning: result.issueTypeReasoning,
+          flowType: result.flowType,
+          flowTypeReasoning: result.flowTypeReasoning,
           priority: result.priority,
           category: result.category,
           reasoning: result.classificationReasoning
@@ -64,19 +79,19 @@ export async function debugIssue(req, res) {
           rowCount: result.sqlData?.rowCount || result.sqlData?.totalRows || 0,
           tablesQueried: result.sqlData?.tablesQueried || [],
           // Show preview of data (first 3 rows overall)
-          dataPreview: result.sqlData?.rows?.slice(0, 3).map(row => {
-            const { _sourceTable, ...data } = row;
-            return { ...data, _from: _sourceTable };
-          }) || [],
+          // dataPreview: result.sqlData?.rows?.slice(0, 3).map(row => {
+          //   const { _sourceTable, ...data } = row;
+          //   return { ...data, _from: _sourceTable };
+          // }) || [],
           // Show data grouped by table (first 2 rows per table)
-          dataByTable: result.sqlData?.rowsByTable ? 
-            Object.entries(result.sqlData.rowsByTable).reduce((acc, [table, rows]) => {
-              acc[table] = rows.slice(0, 2).map(row => {
-                const { _sourceTable, ...data } = row;
-                return data;
-              });
-              return acc;
-            }, {}) : {}
+          // dataByTable: result.sqlData?.rowsByTable ? 
+          //   Object.entries(result.sqlData.rowsByTable).reduce((acc, [table, rows]) => {
+          //     acc[table] = rows.slice(0, 2).map(row => {
+          //       const { _sourceTable, ...data } = row;
+          //       return data;
+          //     });
+          //     return acc;
+          //   }, {}) : {}
         } : null,
         esAnalysis: result.esQuery ? {
           queries: Array.isArray(result.esQuery) ? result.esQuery : [result.esQuery],
@@ -115,12 +130,12 @@ export async function debugIssue(req, res) {
           nextSteps: result.nextSteps || [],
           affectedEntities: result.affectedEntities || {},
           // Token usage tracking
-          tokenUsage: result.tokenUsage || {
-            sqlAnalysis: 0,
-            esAnalysis: 0,
-            finalAnalysis: 0,
-            total: 0
-          },
+          // tokenUsage: result.tokenUsage || {
+          //   sqlAnalysis: 0,
+          //   esAnalysis: 0,
+          //   finalAnalysis: 0,
+          //   total: 0
+          // },
           completedAt: result.analysisCompletedAt || new Date().toISOString()
         },
         processedAt: new Date().toISOString()

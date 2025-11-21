@@ -74,11 +74,13 @@ function convertUTCtoIST(utcDate) {
  * 1. If order_id + timestamp → query order_id with ±30 min window
  * 2. If order_id without timestamp → query order_id directly
  * 3. If no order_id but customer_id → query customer_id with ±60 min window
+ * 4. FALLBACK: If no SQL data, use AI-extracted identifiers with ±24hr window
  * 
  * @param {Object} state - Current workflow state
+ * @param {boolean} useFallback - Whether to use AI-extracted identifiers as fallback
  * @returns {Array} Array of query parameter objects
  */
-function generateSimpleKibanaQueries(state) {
+function generateSimpleKibanaQueries(state, useFallback = false) {
   const queries = [];
   const orderIds = state.sqlData?.orderIds || [];
   const customerIds = state.sqlData?.customerIds || [];
@@ -90,6 +92,52 @@ function generateSimpleKibanaQueries(state) {
     return convertUTCtoIST(now);
   };
 
+  // FALLBACK MODE: Use AI-extracted identifiers with 48hr window (±24 hours)
+  if (useFallback) {
+    logger.info('🔄 Using FALLBACK mode - AI-extracted identifiers with 48hr window');
+    const aiIdentifiers = state.aiExtractedIdentifiers || {};
+    const currentTime = getCurrentTimeIST();
+    
+    // Priority order for fallback identifiers
+    const fallbackPriority = [
+      { key: 'order_id', label: 'Order ID' },
+      { key: 'customer_id', label: 'Customer ID' },
+      { key: 'phone_number', label: 'Phone Number' },
+      { key: 'subscription_id', label: 'Subscription ID' },
+      { key: 'imps_track_id', label: 'IMPS Track ID' },
+      { key: 'mmtc_order_id', label: 'MMTC Order ID' },
+      { key: 'account_number', label: 'Account Number' },
+      { key: 'digio_txn_id', label: 'Digio Transaction ID' },
+      { key: 'predebit_reference_id', label: 'Predebit Reference ID' }
+    ];
+    
+    // Use first 2 available identifiers
+    let count = 0;
+    for (const { key, label } of fallbackPriority) {
+      if (count >= 2) break;
+      
+      const value = aiIdentifiers[key];
+      if (value !== null && value !== undefined && value !== '') {
+        logger.info(`   Adding fallback query for ${label}: ${value}`);
+        queries.push({
+          query: String(value),
+          timing: currentTime,
+          windowMinutes: 3440, // ±24 hours (1440 minutes = 48hr total window)
+          records: 1000,
+          strategy: `fallback_${key}_48hr_window`
+        });
+        count++;
+      }
+    }
+    
+    if (queries.length === 0) {
+      logger.error('❌ FALLBACK FAILED: No valid identifiers found in AI extraction');
+    }
+    
+    return queries;
+  }
+
+  // NORMAL MODE: Use SQL data
   // RULE 1 & 2: Query by order_id (with or without timestamp)
   if (orderIds.length > 0) {
     // Take first 2 order_ids max
@@ -99,8 +147,8 @@ function generateSimpleKibanaQueries(state) {
         queries.push({
           query: String(orderId),
           timing: sqlTimestamp,
-          windowMinutes: 30, // ±30 minutes
-          records: 500,
+          windowMinutes: 60, // ±30 minutes
+          records: 1000,
           strategy: 'order_id_with_timestamp'
         });
         logger.info(`   📋 Query: order_id=${orderId} with timestamp window (±30 min)`);
@@ -108,8 +156,8 @@ function generateSimpleKibanaQueries(state) {
         // No timestamp → query directly without time filter
         queries.push({
           query: String(orderId),
-          windowMinutes: 60, // Wider window since no reference point
-          records: 500,
+          windowMinutes: 100, // Wider window since no reference point
+          records: 1000,
           strategy: 'order_id_no_timestamp'
         });
         logger.info(`   📋 Query: order_id=${orderId} without timestamp (±60 min from now)`);
@@ -124,8 +172,8 @@ function generateSimpleKibanaQueries(state) {
     queries.push({
       query: String(customerId),
       timing: getCurrentTimeIST(), // Use current time
-      windowMinutes: 60, // Bigger time frame (±60 minutes)
-      records: 500,
+      windowMinutes: 100, // Bigger time frame (±60 minutes)
+      records: 1000,
       strategy: 'customer_id_wider_window'
     });
     logger.info(`   📋 Query: customer_id=${customerId} with wider window (±60 min)`);
@@ -282,23 +330,36 @@ function deduplicateLogs(logs) {
 export async function kibanaQueryNode(state) {
   logger.info('📋 Executing kibana_query_node (AI-driven with pagination)');
   
-  // CRITICAL: Check if we have at least one customer_id or order_id
+  // CRITICAL: Check if we have at least one customer_id or order_id from SQL
   const orderIds = state.sqlData?.orderIds || [];
   const customerIds = state.sqlData?.customerIds || [];
   
+  // Fallback: Use AI-extracted identifiers if SQL data is empty
+  let useFallback = false;
   if (orderIds.length === 0 && customerIds.length === 0) {
-    logger.error('❌ CANNOT query Kibana - no customer_id or order_id found in SQL data');
-    logger.error('   This is REQUIRED for targeted log searches');
-    return {
-      ...state,
-      kibanaLogs: [],
-      kibanaLogCount: 0,
-      kibanaSkipped: true,
-      kibanaError: 'No customer_id or order_id available for Kibana queries (REQUIRED)'
-    };
+    logger.warn('⚠️  No customer_id or order_id found in SQL data');
+    logger.info('🔄 Attempting fallback to AI-extracted identifiers...');
+    
+    const aiIdentifiers = state.aiExtractedIdentifiers || {};
+    const hasAnyAiIdentifier = Object.values(aiIdentifiers).some(val => val !== null && val !== undefined && val !== '');
+    
+    if (!hasAnyAiIdentifier) {
+      logger.error('❌ FALLBACK FAILED - no identifiers in AI extraction either');
+      logger.error('   This is REQUIRED for targeted log searches');
+      return {
+        ...state,
+        kibanaLogs: [],
+        kibanaLogCount: 0,
+        kibanaSkipped: true,
+        kibanaError: 'No customer_id or order_id available in SQL data or AI extraction (REQUIRED)'
+      };
+    }
+    
+    useFallback = true;
+    logger.info('✅ Fallback activated - will use AI-extracted identifiers with 48hr time window');
+  } else {
+    logger.info(`✅ Pre-check passed: ${orderIds.length} order_ids, ${customerIds.length} customer_ids available from SQL`);
   }
-  
-  logger.info(`✅ Pre-check passed: ${orderIds.length} order_ids, ${customerIds.length} customer_ids available`);
   
   // Check if Kibana credentials are available (graceful skip if not)
 //   if (!process.env.KIBANA_COOKIE && !process.env.KIBANA_AUTHORIZATION) {
@@ -323,8 +384,8 @@ export async function kibanaQueryNode(state) {
     
     logger.info('🔍 Step 1: Generating simple Kibana queries...');
     
-    // Generate queries using simple deterministic rules
-    const queries = generateSimpleKibanaQueries(state);
+    // Generate queries using simple deterministic rules (or fallback to AI identifiers)
+    const queries = generateSimpleKibanaQueries(state, useFallback);
     
     if (!queries || queries.length === 0) {
       logger.warn('⚠️  No queries generated, skipping');
