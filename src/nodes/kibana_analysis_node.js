@@ -93,6 +93,8 @@ Analyze these logs and identify:
 
 Focus on logs RELEVANT to the user's issue. Ignore normal INFO logs unless they provide context.
 
+<strong>FORMATTING INSTRUCTION</strong>: In your response, use HTML tags for emphasis (e.g., <strong>bold</strong>, <em>italic</em>, <code>code</code>). DO NOT use markdown syntax like **bold** or *italic*. The formatter understands HTML, not markdown.
+
 OUTPUT FORMAT:
 Provide a concise analysis (5-10 bullet points max):
 - What errors occurred?
@@ -155,6 +157,8 @@ Combine these analyses into a single, coherent summary:
 3. Trace the sequence of events across chunks
 4. Highlight the root cause
 5. List key request_ids involved
+
+<strong>FORMATTING INSTRUCTION</strong>: In your response, use HTML tags for emphasis (e.g., <strong>bold</strong>, <em>italic</em>). DO NOT use markdown syntax like **bold** or *italic*. The formatter understands HTML, not markdown.
 
 OUTPUT FORMAT:
 Concise summary (7-10 bullet points):

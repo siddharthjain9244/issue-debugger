@@ -33,11 +33,55 @@ export async function sqlQueryNode(state) {
     
     logger.info('📋 User query:', { query: userQuery });
 
+    // Extract AI-identified identifiers for better context
+    const aiIdentifiers = state.aiExtractedIdentifiers || {};
+    
+    // Helper to format identifier values (handle arrays)
+    const formatIdentifierValue = (value) => {
+      if (Array.isArray(value)) {
+        return `[${value.join(', ')}]`;
+      }
+      return String(value);
+    };
+    
+    const extractedIds = Object.entries(aiIdentifiers)
+      .filter(([key, value]) => {
+        if (value === null || value === undefined || value === '') return false;
+        if (Array.isArray(value)) return value.length > 0;
+        return true;
+      })
+      .map(([key, value]) => `${key}: ${formatIdentifierValue(value)}`)
+      .join(', ');
+    
+    logger.info('🔍 AI-extracted identifiers:', aiIdentifiers);
+
     // Step 1: RETRIEVAL - Find relevant tables using vector similarity search
     // This is the key RAG step - we don't send all 90+ tables to the LLM
     logger.info('🔍 Step 1: Finding relevant tables via similarity search...');
     
-    const relevantTables = await findRelevantTables(userQuery, 6);
+    // Enhance search query with extracted identifiers for better table retrieval
+    let enhancedQuery = userQuery;
+    
+    // Handle order_id (single or array)
+    if (aiIdentifiers.order_id) {
+      const orderIds = Array.isArray(aiIdentifiers.order_id) ? aiIdentifiers.order_id : [aiIdentifiers.order_id];
+      enhancedQuery += ` order_id:${orderIds[0]}`; // Use first order_id for search
+    }
+    
+    // Handle customer_id (single or array)
+    if (aiIdentifiers.customer_id) {
+      const customerIds = Array.isArray(aiIdentifiers.customer_id) ? aiIdentifiers.customer_id : [aiIdentifiers.customer_id];
+      enhancedQuery += ` customer_id:${customerIds[0]}`; // Use first customer_id for search
+    }
+    
+    // Handle subscription_id (single or array)
+    if (aiIdentifiers.subscription_id) {
+      enhancedQuery += ` subscription sip`;
+    }
+    
+    logger.info('🔍 Enhanced search query:', { enhancedQuery });
+    
+    const relevantTables = await findRelevantTables(enhancedQuery, 6);
     
     logger.info('✅ Retrieved relevant tables:', {
       count: relevantTables.length,
@@ -63,6 +107,12 @@ USER QUERY:
 ISSUE PRIORITY: {priority}
 ISSUE CATEGORY: {category}
 
+AI-EXTRACTED IDENTIFIERS (Use these in WHERE clauses):
+{extractedIdentifiers}
+
+These identifiers were intelligently extracted from the user's query. Use them to create targeted WHERE clauses.
+**IMPORTANT**: Identifiers can be single values or arrays. For arrays, use IN clause (e.g., WHERE order_id IN (123, 456)).
+
 RELEVANT DATABASE TABLES:
 Only use the tables and columns listed below. DO NOT invent or guess any other tables/columns.
 
@@ -70,34 +120,73 @@ Only use the tables and columns listed below. DO NOT invent or guess any other t
 
 YOUR TASK:
 Generate a valid MySQL 8.0 SELECT query that will help diagnose and debug the issue described above.
+Use the extracted identifiers above to create precise WHERE clauses.
 
 RULES:
 1. Use ONLY the tables and columns listed above
 2. Generate ONLY SELECT queries (no INSERT, UPDATE, DELETE, DROP)
 3. AVOID JOIN queries unless absolutely necessary - prefer querying single tables when possible
 4. Use proper JOINs on customer_id, order_id ONLY when you need data from multiple tables
-5. Add WHERE clauses to filter relevant data (e.g., customer_id, date ranges)
+5. **CRITICAL**: Use the AI-extracted identifiers in WHERE clauses (e.g., WHERE order_id = ?, WHERE customer_id = ?)
 6. Include ORDER BY for chronological analysis (usually created_at DESC)
 7. Add LIMIT clause to prevent overwhelming results (typically 50-100 rows)
 8. Use table aliases for readability
-9. If customer_id is mentioned in query, add it to WHERE clause
-10. If time range is mentioned, add date filters
-11. Return actual SQL query, not explanation
+9. If time range is mentioned, add date filters
+10. Return actual SQL query, not explanation
+11. **IMPORTANT**: If order_id is provided, query relevant order tables (dg_buy_orders, dg_sell_orders, subscription_orders)
 
 SPECIAL RULES FOR CUSTOMER_PORTFOLIO:
-12. **CRITICAL**: If customer_id is mentioned in the query, ALWAYS include a query for customer_portfolio table
+12. **CRITICAL**: If customer_id is in extracted identifiers, ALWAYS include a query for customer_portfolio table
 13. **CRITICAL**: For customer_portfolio queries, DO NOT add LIMIT clause - fetch ALL rows (portfolio data is small)
 14. customer_portfolio shows gold balance: SELECT customer_id, merchant_id, gold_balance, weighted_average, created_at, updated_at FROM customer_portfolio WHERE customer_id = ?
 
-Example when customer_id is present:
-User query: "customer 1001656012 balance issue"
+
+Example 1 - Single order_id:
+AI-Extracted: "order_id: 26239393423"
+User query: "order stuck"
+Response: {{
+  "sql": [
+    "SELECT * FROM dg_buy_orders WHERE order_id = 26239393423",
+    "SELECT * FROM dg_sell_orders WHERE order_id = 26239393423"
+  ],
+  "explanation": "Fetch buy and sell order details for order 26239393423",
+  "tables_used": ["dg_buy_orders", "dg_sell_orders"]
+}}
+
+Example 2 - Multiple order_ids (use IN clause):
+AI-Extracted: "order_id: [26239393423, 26239393424, 26239393425]"
+User query: "orders 26239393423, 26239393424, 26239393425 are stuck"
+Response: {{
+  "sql": [
+    "SELECT * FROM dg_buy_orders WHERE order_id IN (26239393423, 26239393424, 26239393425) ORDER BY created_at DESC",
+    "SELECT * FROM dg_sell_orders WHERE order_id IN (26239393423, 26239393424, 26239393425) ORDER BY created_at DESC"
+  ],
+  "explanation": "Fetch buy and sell order details for multiple orders",
+  "tables_used": ["dg_buy_orders", "dg_sell_orders"]
+}}
+
+Example 3 - customer_id with portfolio:
+AI-Extracted: "customer_id: 1001656012"
+User query: "customer balance issue"
 Response: {{
   "sql": [
     "SELECT * FROM customer_portfolio WHERE customer_id = 1001656012",
     "SELECT * FROM dg_buy_orders WHERE customer_id = 1001656012 ORDER BY created_at DESC LIMIT 50"
   ],
-  "explanation": "Fetch complete portfolio and recent buy orders",
+  "explanation": "Fetch complete portfolio (no limit) and recent buy orders for customer 1001656012",
   "tables_used": ["customer_portfolio", "dg_buy_orders"]
+}}
+
+Example 4 - Multiple customer_ids (use IN clause):
+AI-Extracted: "customer_id: [1001656012, 1001656013]"
+User query: "check balance for customers 1001656012 and 1001656013"
+Response: {{
+  "sql": [
+    "SELECT * FROM customer_portfolio WHERE customer_id IN (1001656012, 1001656013)",
+    "SELECT * FROM customer WHERE customer_id IN (1001656012, 1001656013)"
+  ],
+  "explanation": "Fetch portfolio and customer details for multiple customers",
+  "tables_used": ["customer_portfolio", "customer"]
 }}
 
 RESPONSE FORMAT:
@@ -120,10 +209,14 @@ Example: {{"sql": ["SELECT * FROM table1 WHERE ...", "SELECT * FROM table2 WHERE
 
     const chain = sqlGenerationPrompt.pipe(llm).pipe(new StringOutputParser());
 
+    // Format extracted identifiers for prompt
+    const identifiersForPrompt = extractedIds || 'No specific identifiers extracted';
+
     const result = await chain.invoke({
       userQuery,
       priority: state.priority || 'unknown',
       category: state.category || 'unknown',
+      extractedIdentifiers: identifiersForPrompt,
       schemasContext
     });
 
@@ -152,7 +245,8 @@ Example: {{"sql": ["SELECT * FROM table1 WHERE ...", "SELECT * FROM table2 WHERE
     logger.info('✅ SQL query generated:', {
       tables: queryResult.tables_used,
       explanation: queryResult.explanation,
-      queryCount: Array.isArray(sqlQueries) ? sqlQueries.length : 1
+      queryCount: Array.isArray(sqlQueries) ? sqlQueries.length : 1,
+      usedIdentifiers: extractedIds || 'none'
     });
 
     // Log the actual SQL (useful for debugging)

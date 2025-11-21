@@ -111,27 +111,53 @@ function generateSimpleKibanaQueries(state, useFallback = false) {
       { key: 'predebit_reference_id', label: 'Predebit Reference ID' }
     ];
     
-    // Use first 2 available identifiers
-    let count = 0;
+    // Use first 2 available identifier types (max 2 IDs per type)
+    let identifierTypesUsed = 0;
+    
     for (const { key, label } of fallbackPriority) {
-      if (count >= 2) break;
+      if (identifierTypesUsed >= 2) break; // Max 2 identifier types
       
       const value = aiIdentifiers[key];
-      if (value !== null && value !== undefined && value !== '') {
+      
+      // Skip null/empty values
+      if (value === null || value === undefined || value === '') continue;
+      
+      // Handle arrays (multiple IDs of same type)
+      if (Array.isArray(value)) {
+        if (value.length === 0) continue;
+        
+        logger.info(`   Adding fallback queries for ${label}: [${value.join(', ')}] (${value.length} values)`);
+        
+        // Create a query for each ID in the array (max 2 per type)
+        value.slice(0, 2).forEach(id => {
+          queries.push({
+            query: String(id),
+            timing: currentTime,
+            windowMinutes: 3440, // ±24 hours (48hr total window)
+            records: 1000,
+            strategy: `fallback_${key}_48hr_window`
+          });
+        });
+        
+        identifierTypesUsed++;
+      } else {
+        // Single value
         logger.info(`   Adding fallback query for ${label}: ${value}`);
         queries.push({
           query: String(value),
           timing: currentTime,
-          windowMinutes: 3440, // ±24 hours (1440 minutes = 48hr total window)
+          windowMinutes: 3440, // ±24 hours (48hr total window)
           records: 1000,
           strategy: `fallback_${key}_48hr_window`
         });
-        count++;
+        identifierTypesUsed++;
       }
     }
     
     if (queries.length === 0) {
       logger.error('❌ FALLBACK FAILED: No valid identifiers found in AI extraction');
+    } else {
+      logger.info(`✅ Created ${queries.length} fallback queries from ${identifierTypesUsed} identifier type(s)`);
     }
     
     return queries;

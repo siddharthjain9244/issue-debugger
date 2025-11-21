@@ -51,17 +51,17 @@ You are a database expert analyzing SQL query results for a user-reported issue 
 Note: Data is organized by source table for better analysis. Pay attention to which table each row comes from.
 
 ### CRITICAL NOTE - GOLD QUANTITY FIELDS:
-⚠️  **IMPORTANT**: The "gold_balance" field is ALWAYS NULL/unreliable - DO NOT use it!
-✅  **USE THESE INSTEAD** for gold quantity calculations:
+⚠️  <strong>IMPORTANT</strong>: The "gold_balance" field is ALWAYS NULL/unreliable - DO NOT use it!
+✅  <strong>USE THESE INSTEAD</strong> for gold quantity calculations:
    - "quantity" field (in grams) - found in portfolio/orders
    - "gram_weight" field (in grams) - found in buy/sell orders
    - "amount" field is in INR (money), NOT grams
 
 ### ORDER STATUS CODES:
-- **status = 7**: SUCCESS (order completed successfully)
-- **status = 0**: CANCELLED (order was cancelled)
-- **status = 13**: PENDING (order is being processed)
-- **status = 15**: PENDING DISBURSEMENT (payment pending)
+- <strong>status = 7</strong>: SUCCESS (order completed successfully)
+- <strong>status = 0</strong>: CANCELLED (order was cancelled)
+- <strong>status = 13</strong>: PENDING (order is being processed)
+- <strong>status = 15</strong>: PENDING DISBURSEMENT (payment pending)
 
 Only orders with status = 7 should be counted for gold balance calculations.
 
@@ -74,6 +74,8 @@ Focus on:
 3. Any anomalies or patterns in the data?
 4. Specific evidence from the data (IDs, values, timestamps)
 5. What's missing or needs verification?
+
+<strong>FORMATTING INSTRUCTION</strong>: Use HTML tags for emphasis (e.g., <strong>bold</strong>, <em>italic</em>, <code>code</code>). DO NOT use markdown syntax like **bold** or *italic*.
 
 Provide a concise analysis (3-5 bullet points).`);
 
@@ -162,17 +164,17 @@ You are an Elasticsearch expert analyzing transaction data for a user-reported i
 {transactions}
 
 ### CRITICAL NOTE - GOLD QUANTITY FIELDS:
-⚠️  **IMPORTANT**: DO NOT rely on "gold_balance" field (it's unreliable/null)
-✅  **USE THESE INSTEAD** for gold quantity:
+⚠️  <strong>IMPORTANT</strong>: DO NOT rely on "gold_balance" field (it's unreliable/null)
+✅  <strong>USE THESE INSTEAD</strong> for gold quantity:
    - "gram_weight" field - gold quantity in grams
    - "quantity" field - gold quantity in grams  
    - "amount" field is in INR (money), NOT grams
 
 ### ORDER STATUS CODES:
-- **status = 7**: SUCCESS (transaction completed successfully)
-- **status = 0**: CANCELLED (transaction was cancelled)
-- **status = 13**: PENDING (transaction is being processed)
-- **status = 15**: PENDING DISBURSEMENT (payment pending)
+- <strong>status = 7</strong>: SUCCESS (transaction completed successfully)
+- <strong>status = 0</strong>: CANCELLED (transaction was cancelled)
+- <strong>status = 13</strong>: PENDING (transaction is being processed)
+- <strong>status = 15</strong>: PENDING DISBURSEMENT (payment pending)
 
 Only transactions with status = 7 should be counted for gold balance calculations.
 
@@ -186,6 +188,8 @@ Focus on:
 4. Timeline of events (created_at, updated_at)
 5. Amount discrepancies or anomalies
 6. Correlation with the reported issue
+
+<strong>FORMATTING INSTRUCTION</strong>: Use HTML tags for emphasis (e.g., <strong>bold</strong>, <em>italic</em>). DO NOT use markdown syntax like **bold** or *italic*.
 
 Provide a concise analysis (3-5 bullet points).`);
 
@@ -280,19 +284,19 @@ Reasoning: {classificationReasoning}
 {kibanaInsights}
 
 ### CRITICAL REMINDER - GOLD QUANTITY FIELDS:
-⚠️  **NEVER use "gold_balance" field** - it's always NULL/unreliable
-✅  **ALWAYS use these fields** for gold quantity calculations:
+⚠️  <strong>NEVER use "gold_balance" field</strong> - it's always NULL/unreliable
+✅  <strong>ALWAYS use these fields</strong> for gold quantity calculations:
    - "quantity" field (in grams)
    - "gram_weight" field (in grams)
    - Calculate totals: sum of buy gram_weight - sum of sell gram_weight = net gold holdings
 
 ### ORDER STATUS CODES:
-- **status = 7**: SUCCESS (order/transaction completed successfully)
-- **status = 0**: CANCELLED (order/transaction was cancelled)
-- **status = 13**: PENDING (order/transaction is being processed)
-- **status = 15**: PENDING DISBURSEMENT (payment pending)
+- <strong>status = 7</strong>: SUCCESS (order/transaction completed successfully)
+- <strong>status = 0</strong>: CANCELLED (order/transaction was cancelled)
+- <strong>status = 13</strong>: PENDING (order/transaction is being processed)
+- <strong>status = 15</strong>: PENDING DISBURSEMENT (payment pending)
 
-**IMPORTANT**: Only count orders/transactions with status = 7 (SUCCESS) for gold balance calculations.
+<strong>IMPORTANT</strong>: Only count orders/transactions with status = 7 (SUCCESS) for gold balance calculations.
 Pending (13, 15) or cancelled (0) orders should NOT be included in balance.
 
 ### YOUR TASK:
@@ -307,15 +311,17 @@ IMPORTANT RULES:
 - Be honest about confidence level
 - Provide actionable next steps
 
+<strong>FORMATTING INSTRUCTION</strong>: In your response, use HTML tags for emphasis (e.g., <strong>bold</strong>, <em>italic</em>, <ul><li>list items</li></ul>). DO NOT use markdown syntax like **bold**, *italic*, or - for lists. Your formatter understands HTML, not markdown.
+
 Respond in valid JSON format:
 {{
-  "rootCause": "Clear, definitive explanation of what caused the issue",
+  "rootCause": "Clear, definitive explanation of what caused the issue (use HTML tags for formatting)",
   "evidence": [
-    "Specific evidence point 1 (from SQL or ES)",
-    "Specific evidence point 2 (from SQL or ES)",
+    "Specific evidence point 1 (from SQL or ES) - use HTML tags for formatting",
+    "Specific evidence point 2 (from SQL or ES) - use HTML tags for formatting",
     "Additional supporting evidence"
   ],
-  "explanation": "Detailed technical explanation connecting all insights",
+  "explanation": "Detailed technical explanation connecting all insights (use HTML tags for formatting)",
   "confidence": "high|medium|low",
   "dataGaps": [
     "What data is missing (if any)"

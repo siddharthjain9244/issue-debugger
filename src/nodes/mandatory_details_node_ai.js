@@ -62,23 +62,25 @@ Extract ALL identifiers present in the text above. Look for these types of ident
 
 RULES:
 - Be flexible with naming (camelCase, snake_case, kebab-case, spaces, etc.)
-- Extract the VALUE, not just detect presence
+- Extract the VALUE(S), not just detect presence
 - If a type of identifier is NOT found, set it to null
+- **IMPORTANT**: If MULTIPLE IDs of the same type are found, return them as an array (e.g., ["123", "456"])
+- If only ONE ID is found, return it as a string (e.g., "123")
 - Look in both subject and body
 - Be intelligent about context (e.g., "customer 1234567" means customer_id = 1234567)
 - Phone numbers: 10 digits (with or without +91)
 
 OUTPUT FORMAT (JSON only, NO extra text):
 {{
-  "order_id": "value" or null,
-  "customer_id": "value" or null,
-  "phone_number": "value" or null,
+  "order_id": "value" or ["value1", "value2"] or null,
+  "customer_id": "value" or ["value1", "value2"] or null,
+  "phone_number": "value" or ["value1", "value2"] or null,
   "imps_track_id": "value" or null,
   "digio_txn_id": "value" or null,
   "account_number": "value" or null,
   "mmtc_order_id": "value" or null,
   "predebit_reference_id": "value" or null,
-  "subscription_id": "value" or null
+  "subscription_id": "value" or ["value1", "value2"] or null
 }}
 
 EXAMPLES:
@@ -106,6 +108,14 @@ Output: {{"order_id": null, "customer_id": "100200", "phone_number": null, "imps
 Example 6:
 Input: "Order 123 for customer 456 with mobile 9988776655 failed"
 Output: {{"order_id": "123", "customer_id": "456", "phone_number": "9988776655", "imps_track_id": null, "digio_txn_id": null, "account_number": null, "mmtc_order_id": null, "predebit_reference_id": null, "subscription_id": null}}
+
+Example 7 (Multiple order IDs):
+Input: "Orders 26239393423, 26239393424, and 26239393425 are stuck"
+Output: {{"order_id": ["26239393423", "26239393424", "26239393425"], "customer_id": null, "phone_number": null, "imps_track_id": null, "digio_txn_id": null, "account_number": null, "mmtc_order_id": null, "predebit_reference_id": null, "subscription_id": null}}
+
+Example 8 (Multiple customer IDs):
+Input: "Check balance for customers 1001656012 and 1001656013"
+Output: {{"order_id": null, "customer_id": ["1001656012", "1001656013"], "phone_number": null, "imps_track_id": null, "digio_txn_id": null, "account_number": null, "mmtc_order_id": null, "predebit_reference_id": null, "subscription_id": null}}
 `);
 
     const llm = new ChatOpenAI({
@@ -131,17 +141,25 @@ Output: {{"order_id": "123", "customer_id": "456", "phone_number": "9988776655",
 
     const extractedIdentifiers = JSON.parse(cleaned);
 
-    // Count how many identifiers were found
+    // Count how many identifiers were found (arrays count as 1 identifier type)
     const foundIdentifiers = Object.entries(extractedIdentifiers)
-      .filter(([key, value]) => value !== null && value !== undefined && value !== '')
+      .filter(([key, value]) => {
+        if (value === null || value === undefined || value === '') return false;
+        if (Array.isArray(value)) return value.length > 0; // Array must have items
+        return true;
+      })
       .map(([key, value]) => ({ type: key, value }));
 
     const hasAnyIdentifier = foundIdentifiers.length > 0;
 
     if (hasAnyIdentifier) {
-      logger.info(`✅ AI extracted ${foundIdentifiers.length} identifier(s):`);
+      logger.info(`✅ AI extracted ${foundIdentifiers.length} identifier type(s):`);
       foundIdentifiers.forEach(id => {
-        logger.info(`   - ${id.type}: ${id.value}`);
+        if (Array.isArray(id.value)) {
+          logger.info(`   - ${id.type}: [${id.value.join(', ')}] (${id.value.length} values)`);
+        } else {
+          logger.info(`   - ${id.type}: ${id.value}`);
+        }
       });
     } else {
       logger.warn('❌ No identifiers found in the query');
