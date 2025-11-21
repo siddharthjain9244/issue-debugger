@@ -2,6 +2,7 @@ import { logger } from '../utils/logger.js';
 import { ChatOpenAI } from '@langchain/openai';
 import { PromptTemplate } from '@langchain/core/prompts';
 import { StringOutputParser } from '@langchain/core/output_parsers';
+import { getESIndexes } from '../config/elasticsearch.config.js';
 
 /**
  * Elasticsearch Query Node
@@ -11,7 +12,10 @@ import { StringOutputParser } from '@langchain/core/output_parsers';
  * ES Context:
  * - ES only stores ORDER TRANSACTION DATA
  * - Available transaction types: buy, sell, redeem, goldback
- * - Index: digital-gold-transactions (production) or digital-gold-transactions-new (staging/local)
+ * - Index (environment-based):
+ *   - production: digital-gold-transactions
+ *   - staging: digital-gold-transactions-new
+ *   - local: digital-gold-transactions-new
  * - Contains order details from dg_buy_orders and dg_sell_orders tables
  * 
  * @param {Object} state - Current workflow state
@@ -21,6 +25,14 @@ export async function esQueryNode(state) {
   logger.info('📊 Executing es_query_node');
 
   try {
+    // Get environment-based ES index
+    const env = process.env.NODE_ENV || 'local';
+    const esIndexes = getESIndexes(env);
+    const transactionsIndex = esIndexes.TRANSACTIONS;
+    
+    logger.info(`   🌍 Environment: ${env}`);
+    logger.info(`   📦 ES Index: ${transactionsIndex}`);
+    
     const userQuery = `${state.subject}\n${state.body}`;
     
     // Extract SQL data if available
@@ -58,7 +70,7 @@ AVAILABLE DATA IN ES:
 - Timestamps: created_at, updated_at
 - Additional: price_per_gram, display_weight, quote_id, merchant_order_id
 
-Index:  digital-gold-transactions-new
+Index: {esIndex}
 
 WHEN TO QUERY ES:
 ✅ Query ES when user asks about:
@@ -163,7 +175,8 @@ Use "terms" query for multiple IDs, "match" query for single ID.`;
       priority: state.priority || 'unknown',
       category: state.category || 'unknown',
       hasSQLData: hasSQLData ? 'YES' : 'NO',
-      sqlContext: sqlContext
+      sqlContext: sqlContext,
+      esIndex: transactionsIndex,
     });
 
     // Parse the JSON response
@@ -184,17 +197,23 @@ Use "terms" query for multiple IDs, "match" query for single ID.`;
       };
     }
 
+    // Add the environment-specific index to the ES query
+    const esQueryWithIndex = {
+      index: transactionsIndex,
+      ...queryDecision.esQuery
+    };
+    
     logger.info('✅ ES query generated:', {
       reasoning: queryDecision.reasoning,
-      index: queryDecision.esQuery.index
+      index: transactionsIndex
     });
 
-    logger.info('📄 Generated ES query:', queryDecision.esQuery);
+    logger.info('📄 Generated ES query:', esQueryWithIndex);
 
     return {
       ...state,
       needsESQuery: true,
-      esQuery: queryDecision.esQuery,
+      esQuery: esQueryWithIndex,
       esReasoning: queryDecision.reasoning
     };
 
