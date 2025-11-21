@@ -1,15 +1,22 @@
 /**
- * Kibana Analysis Node
+ * Kibana Analysis Node (Enhanced with Chronological & API Analysis)
  * 
- * Uses AI to analyze Kibana logs and extract insights:
- * - Error patterns and exceptions
- * - Request/response flows
- * - Timing issues and timeouts
- * - API failures
- * - Database query issues
- * - Payment gateway errors
+ * Uses AI to analyze Kibana logs with detailed step-by-step breakdown:
+ * - CHRONOLOGICAL TIMELINE: Analyzes logs timestamp-wise to trace event sequence
+ * - API CALL TRACKING: Identifies all API calls (internal/external) and their outcomes
+ * - ERROR DETECTION: Finds all errors, exceptions, and failure points
+ * - REQUEST FLOW: Tracks request_id through entire journey
+ * - KNOWLEDGE BASE COMPARISON: Compares actual behavior vs expected business flow
+ * - ROOT CAUSE ANALYSIS: Identifies where exactly the process broke
  * 
- * Max logs analyzed: 1000 (chunked if necessary)
+ * Features:
+ * - Logs are sorted chronologically for accurate timeline analysis
+ * - API endpoints, status codes, and response times are preserved
+ * - Errors and external API failures are highlighted
+ * - Database queries and timing issues are tracked
+ * - Payment gateway interactions are analyzed
+ * 
+ * Max logs analyzed: 1000 (chunked into 200-log batches if necessary)
  */
 
 import { PromptTemplate } from '@langchain/core/prompts';
@@ -33,29 +40,52 @@ function chunkLogs(logs, chunkSize = 200) {
 }
 
 /**
- * Format logs for AI analysis
+ * Format logs for AI analysis (preserves timestamp, API details, errors)
  * 
  * @param {Array} logs - Array of {ts, message} objects
- * @returns {string} Formatted log string
+ * @returns {string} Formatted log string with chronological order and API details
  */
 function formatLogsForAnalysis(logs) {
-  return logs.map((log, idx) => {
+  // Sort logs by timestamp for chronological analysis
+  const sortedLogs = [...logs].sort((a, b) => {
+    const timeA = new Date(a.ts).getTime();
+    const timeB = new Date(b.ts).getTime();
+    return timeA - timeB;
+  });
+
+  return sortedLogs.map((log, idx) => {
     // Try to parse JSON message for better formatting
     try {
       const parsed = JSON.parse(log.message);
+      
+      // Extract comprehensive details
       const relevant = {
-        time: log.ts,
-        level: parsed.log_level || 'info',
-        message: parsed.message || '',
-        request_id: parsed.request_id,
-        user_id: parsed.user_id,
-        status_code: parsed.status_code,
-        error: parsed.error || parsed.errorMessage
+        timestamp: log.ts,
+        log_level: parsed.log_level || parsed.level || 'info',
+        message: parsed.message || parsed.msg || '',
+        request_id: parsed.request_id || parsed.requestId,
+        user_id: parsed.user_id || parsed.userId || parsed.customer_id,
+        api_endpoint: parsed.url || parsed.endpoint || parsed.path,
+        method: parsed.method,
+        status_code: parsed.status_code || parsed.statusCode,
+        response_time: parsed.response_time || parsed.responseTime,
+        error: parsed.error || parsed.errorMessage || parsed.err,
+        error_code: parsed.error_code || parsed.errorCode,
+        external_api: parsed.external_api || parsed.externalApi,
+        db_query: parsed.query || parsed.sql
       };
+      
+      // Remove undefined/null values for cleaner output
+      Object.keys(relevant).forEach(key => {
+        if (relevant[key] === undefined || relevant[key] === null) {
+          delete relevant[key];
+        }
+      });
+      
       return `[${idx + 1}] ${JSON.stringify(relevant)}`;
     } catch (e) {
-      // Not JSON, use as is
-      return `[${idx + 1}] ${log.ts} | ${log.message.substring(0, 500)}`;
+      // Not JSON, preserve as is with timestamp
+      return `[${idx + 1}] ${log.ts} | ${log.message.substring(0, 600)}`;
     }
   }).join('\n');
 }
@@ -70,38 +100,74 @@ function formatLogsForAnalysis(logs) {
  */
 async function analyzeLogChunk(logs, userQuery, knowledgeBaseContext) {
   const analysisPrompt = PromptTemplate.fromTemplate(`
-You are an expert backend engineer analyzing application logs to diagnose an issue.
+You are an expert backend engineer analyzing application logs to diagnose an issue in a Digital Gold platform.
 
 USER ISSUE:
 {userQuery}
 
-KNOWLEDGE BASE CONTEXT (Expected Behavior):
+KNOWLEDGE BASE CONTEXT (Expected Business Flow & Behavior):
 {knowledgeBaseContext}
+
+Use this knowledge base to understand what SHOULD happen and identify where actual behavior deviates.
 
 APPLICATION LOGS ({logCount} logs):
 {logs}
 
 YOUR TASK:
-Analyze these logs and identify:
-1. **Errors & Exceptions**: Any error messages, stack traces, or exceptions
-2. **Request Flow**: Track request_id through the logs, identify where it fails
-3. **Timing Issues**: Timeouts, slow queries, delays
-4. **API Failures**: External API calls that failed (payment, merchant, etc.)
-5. **Database Issues**: SQL errors, connection issues, query failures
-6. **Status Codes**: HTTP error codes (4xx, 5xx)
-7. **Patterns**: Repeated errors, cascading failures
+Analyze these logs chronologically (timestamp-wise) and provide a detailed step-by-step breakdown of what actually happened.
 
-Focus on logs RELEVANT to the user's issue. Ignore normal INFO logs unless they provide context.
+ANALYSIS STEPS:
+1. <strong>Chronological Timeline</strong>: Sort events by timestamp and trace the flow
+2. <strong>API Call Tracking</strong>: Identify all API calls made (internal/external)
+   - Which APIs were called?
+   - What were the request/response payloads?
+   - Which APIs failed and why?
+3. <strong>Request Flow Tracing</strong>: Follow request_id through the entire journey
+4. <strong>Error Detection</strong>: Identify all errors, exceptions, and failure points
+5. <strong>Expected vs Actual Behavior</strong>: Compare logs against knowledge base expectations
+6. <strong>Root Cause Identification</strong>: Where exactly did the process break?
+
+SPECIFIC THINGS TO LOOK FOR:
+- <strong>Errors & Exceptions</strong>: Any error messages, stack traces, or exceptions
+- <strong>API Failures</strong>: External API calls that failed (payment gateway, merchant API, etc.)
+- <strong>Database Issues</strong>: SQL errors, connection issues, query failures
+- <strong>Status Codes</strong>: HTTP error codes (4xx for client errors, 5xx for server errors)
+- <strong>Timing Issues</strong>: Timeouts, slow queries, delays
+- <strong>Business Logic Errors</strong>: Failed validations, incorrect state transitions
+- <strong>Payment Issues</strong>: Payment collection failures, gateway errors
+- <strong>Order Status Changes</strong>: Track status transitions (pending → success/failed)
 
 <strong>FORMATTING INSTRUCTION</strong>: In your response, use HTML tags for emphasis (e.g., <strong>bold</strong>, <em>italic</em>, <code>code</code>). DO NOT use markdown syntax like **bold** or *italic*. The formatter understands HTML, not markdown.
 
 OUTPUT FORMAT:
-Provide a concise analysis (5-10 bullet points max):
-- What errors occurred?
-- Which request_id(s) failed?
-- What was the sequence of events?
-- Where did the process fail?
-- Any timeouts or external API issues?
+Provide a detailed step-by-step analysis:
+
+<strong>1. Chronological Flow (What Actually Happened):</strong>
+- [Timestamp 1] First event: ...
+- [Timestamp 2] API call to X: ...
+- [Timestamp 3] Response received: ...
+- [Timestamp 4] Error occurred: ...
+(Continue chronologically through the entire flow)
+
+<strong>2. API Calls Made:</strong>
+- API 1: [endpoint] - Status: [success/failed] - Details: ...
+- API 2: [endpoint] - Status: [success/failed] - Details: ...
+
+<strong>3. Errors & Failures:</strong>
+- Error 1: [description] at [timestamp]
+- Error 2: [description] at [timestamp]
+
+<strong>4. Request IDs Involved:</strong>
+- request_id: [id] - Status: [success/failed]
+
+<strong>5. Comparison with Expected Behavior:</strong>
+- Expected (from KB): ...
+- Actual (from logs): ...
+- Deviation: ...
+
+<strong>6. Root Cause:</strong>
+- Primary issue: ...
+- Evidence: ...
 `);
 
   const model = new ChatOpenAI({
@@ -142,7 +208,7 @@ async function synthesizeLogInsights(chunkAnalyses, userQuery) {
   }
 
   const synthesisPrompt = PromptTemplate.fromTemplate(`
-You are synthesizing multiple log analysis results into a single coherent diagnosis.
+You are synthesizing multiple log analysis results into a single coherent, chronological diagnosis.
 
 USER ISSUE:
 {userQuery}
@@ -151,22 +217,44 @@ LOG ANALYSES (from {chunkCount} chunks):
 {analyses}
 
 YOUR TASK:
-Combine these analyses into a single, coherent summary:
-1. Remove duplicates
-2. Identify the main error/failure pattern
-3. Trace the sequence of events across chunks
-4. Highlight the root cause
-5. List key request_ids involved
+Combine these chunk analyses into a single, comprehensive step-by-step breakdown:
 
-<strong>FORMATTING INSTRUCTION</strong>: In your response, use HTML tags for emphasis (e.g., <strong>bold</strong>, <em>italic</em>). DO NOT use markdown syntax like **bold** or *italic*. The formatter understands HTML, not markdown.
+1. <strong>Merge Chronological Timeline</strong>: Combine events from all chunks in timestamp order
+2. <strong>Consolidate API Calls</strong>: List all unique API calls made across chunks
+3. <strong>Deduplicate Errors</strong>: Remove duplicate error reports, keep unique failures
+4. <strong>Trace Complete Request Flow</strong>: Follow request_ids across all chunks
+5. <strong>Identify Root Cause</strong>: Synthesize the main failure point from all evidence
+
+<strong>FORMATTING INSTRUCTION</strong>: In your response, use HTML tags for emphasis (e.g., <strong>bold</strong>, <em>italic</em>, <code>code</code>). DO NOT use markdown syntax like **bold** or *italic*. The formatter understands HTML, not markdown.
 
 OUTPUT FORMAT:
-Concise summary (7-10 bullet points):
-- Main error/failure identified
-- Request IDs involved
-- Sequence of events
-- Root cause
-- Key evidence from logs
+Provide a comprehensive step-by-step analysis:
+
+<strong>1. Complete Chronological Flow (Merged from all chunks):</strong>
+- [Timestamp] Event 1: ...
+- [Timestamp] Event 2: ...
+- [Timestamp] Event 3: ...
+(Complete timeline across all log chunks)
+
+<strong>2. All API Calls Made:</strong>
+- API 1: [endpoint] - Status: [success/failed] - Details: ...
+- API 2: [endpoint] - Status: [success/failed] - Details: ...
+
+<strong>3. All Errors & Failures Detected:</strong>
+- Error 1: [description] at [timestamp]
+- Error 2: [description] at [timestamp]
+
+<strong>4. Request IDs Tracked:</strong>
+- request_id: [id] - Journey: ... - Final Status: ...
+
+<strong>5. Root Cause Analysis:</strong>
+- Primary failure: ...
+- Supporting evidence: ...
+- Where process broke: ...
+
+<strong>6. Key Findings:</strong>
+- Finding 1: ...
+- Finding 2: ...
 `);
 
   const model = new ChatOpenAI({
@@ -217,11 +305,15 @@ export async function kibanaAnalysisNode(state) {
     const userQuery = `${state.subject}\n${state.body}`;
     const logs = state.kibanaLogs;
     
-    logger.info(`📊 Analyzing ${logs.length} logs...`);
+    logger.info(`📊 Analyzing ${logs.length} logs (chronologically & API-wise)...`);
+    logger.info('   - Tracing timeline of events');
+    logger.info('   - Tracking API calls and responses');
+    logger.info('   - Comparing with knowledge base expectations');
+    logger.info('   - Identifying root cause step-by-step');
 
     // Chunk logs if more than 200
     if (logs.length > 200) {
-      logger.info(`   Splitting into chunks (max 200 logs per chunk)...`);
+      logger.info(`   Splitting into chunks (max 200 logs per chunk for detailed analysis)...`);
       
       const chunks = chunkLogs(logs, 200);
       logger.info(`   Created ${chunks.length} chunks`);
@@ -260,7 +352,7 @@ export async function kibanaAnalysisNode(state) {
         state.knowledgeBaseContext
       );
 
-      logger.info('✅ Log analysis completed (single-chunk)');
+      logger.info('✅ Log analysis completed (single-chunk)', { insights });
       
       return {
         ...state,
